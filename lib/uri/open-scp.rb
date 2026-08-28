@@ -14,7 +14,9 @@ module URI
       options[:ssh].merge!(open_options[:ssh] || {})
       progress = options.delete(:progress_proc)
       content_length = options.delete(:content_length_proc)
-      buf << Net::SCP.download!(host, user, path, nil, options) do |_channel, _name, received, total|
+      output = Object.new
+      output.define_singleton_method(:write) { |data| buf << data }
+      Net::SCP.download!(host, user, path, output, options) do |_channel, _name, received, total|
         content_length.call(total) if content_length && received == 0
         progress.call(received) if progress
       end
