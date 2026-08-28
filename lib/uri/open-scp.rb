@@ -17,7 +17,10 @@ module URI
       output = Object.new
       output.define_singleton_method(:write) { |data| buf << data }
       Net::SCP.download!(host, user, path, output, options) do |_channel, _name, received, total|
-        content_length.call(total) if content_length && received == 0
+        if content_length
+          content_length.call(total)
+          content_length = nil
+        end
         progress.call(received) if progress
       end
       buf.io.rewind
