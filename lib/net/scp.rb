@@ -368,22 +368,27 @@ module Net
               channel[:error_string] = +''
 
               channel.on_close do
-                # If we got an exit-status and it is not 0, something went wrong
-                if !channel[:exit].nil? && channel[:exit] != 0
-                  raise Net::SCP::Error, 'SCP did not finish successfully ' \
-                                         "(#{channel[:exit]}): #{channel[:error_string]}"
+                unless channel[:aborted]
+                  # If we got an exit-status and it is not 0, something went wrong
+                  if !channel[:exit].nil? && channel[:exit] != 0
+                    raise Net::SCP::Error, 'SCP did not finish successfully ' \
+                                           "(#{channel[:exit]}): #{channel[:error_string]}"
+                  end
+
+                  unless transfer_complete?(channel)
+                    send("#{channel[:state]}_state", channel)
+                  end
+
+                  unless transfer_complete?(channel)
+                    raise Net::SCP::Error, 'SCP did not finish successfully ' \
+                                           '(channel closed before end of transmission)'
+                  end
+
+                  # At this point, :state can be :finish or :next_item
+                  send("#{channel[:state]}_state", channel)
                 end
-                # We may get no exit-status at all as returning a status is only RECOMENDED
-                # in RFC4254. But if our state is not :finish, something went wrong
-                if channel[:exit].nil? && channel[:state] != :finish
-                  raise Net::SCP::Error, 'SCP did not finish successfully ' \
-                                         '(channel closed before end of transmission)'
-                end
-                # At this point, :state can be :finish or :next_item
-                send("#{channel[:state]}_state", channel)
               ensure
-                io = channel[:io]
-                io.close if io && io != channel[:local] && !io.closed?
+                close_transfer_io(channel)
               end
               channel.on_data                   { |ch2, data| channel[:buffer].append(data) }
               channel.on_extended_data          { |ch2, type, data| debug { data.chomp } }
@@ -433,6 +438,25 @@ module Net
       # set, this does nothing.
       def progress_callback(channel, name, sent, total)
         channel[:callback].call(channel, name, sent, total) if channel[:callback]
+      rescue
+        abort_transfer(channel)
+        raise
+      end
+
+      def abort_transfer(channel)
+        channel[:aborted] = true
+        close_transfer_io(channel)
+        channel.close
+      end
+
+      def close_transfer_io(channel)
+        io = channel[:io]
+        io.close if io && io != channel[:local] && !io.closed?
+      end
+
+      def transfer_complete?(channel)
+        channel[:state] == :finish ||
+          (channel[:state] == :next_item && channel[:stack].empty?)
       end
 
       # Imported from ruby 1.9.2 shellwords.rb
