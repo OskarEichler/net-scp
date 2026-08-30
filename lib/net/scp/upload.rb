@@ -72,13 +72,23 @@ module Net; class SCP
     # If any data remains to be transferred from the current file, sends it.
     # Otherwise, sends a 0-byte and transfers to #next_item_state.
     def send_data_state(channel)
-      data = channel[:io].read(channel[:chunk_size])
-      if data.nil?
+      remaining = channel[:size] - channel[:sent]
+      if remaining <= 0
         channel[:io].close unless channel[:local].respond_to?(:read)
         channel.send_data("\0")
         await_response(channel, :next_item)
       else
-        channel[:sent] += data.length
+        requested = [channel[:chunk_size], remaining].min
+        data = channel[:io].read(requested)
+        if data.nil? || data.empty?
+          abort_transfer(channel)
+          raise Net::SCP::Error, "upload source ended before its announced size"
+        end
+        if data.bytesize > requested
+          abort_transfer(channel)
+          raise Net::SCP::Error, "upload source returned more data than requested"
+        end
+        channel[:sent] += data.bytesize
         progress_callback(channel, channel[:name], channel[:sent], channel[:size])
         channel.send_data(data)
       end
