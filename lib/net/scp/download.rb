@@ -67,8 +67,16 @@ module Net; class SCP
     def read_data_state(channel)
       return if channel[:buffer].empty?
       data = channel[:buffer].read!(channel[:remaining])
-      channel[:io].write(data)
-      channel[:remaining] -= data.length
+      written = 0
+      while written < data.bytesize
+        count = channel[:io].write(data.byteslice(written, data.bytesize - written))
+        unless count.is_a?(Integer) && count > 0 && count <= data.bytesize - written
+          abort_transfer(channel)
+          raise Net::SCP::Error, "download destination did not accept data"
+        end
+        written += count
+      end
+      channel[:remaining] -= data.bytesize
       progress_callback(channel, channel[:file][:name], channel[:file][:size] - channel[:remaining], channel[:file][:size])
       await_response(channel, :finish_read) if channel[:remaining] <= 0
     end
