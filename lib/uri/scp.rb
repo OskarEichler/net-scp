@@ -21,6 +21,13 @@ module URI
       options
     end
 
+    def initialize_copy(other)
+      super
+      remove_instance_variable(:@options) if defined?(@options)
+      remove_instance_variable(:@options_query) if defined?(@options_query)
+      options
+    end
+
     def options
       return @options if defined?(@options_query) && @options_query == query
 
